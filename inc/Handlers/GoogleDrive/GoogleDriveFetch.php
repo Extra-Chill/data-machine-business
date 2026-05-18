@@ -8,9 +8,9 @@
  * FetchGoogleDriveAbility so any caller (REST, CLI, chat tool, this
  * pipeline handler) can drive it.
  *
- * Shares the existing Google OAuth provider (slug: googlesheets) with
- * the Sheets handlers. See data-machine-business.php for the scope
- * union wiring.
+ * Shares the unified Google OAuth provider (slug: google) with the
+ * Sheets handlers. See data-machine-business.php for the scope union
+ * wiring.
  *
  * @package DataMachineBusiness
  * @subpackage Handlers\GoogleDrive
@@ -42,13 +42,13 @@ class GoogleDriveFetch extends FetchHandler {
 			__( 'Google Drive', 'data-machine-business' ),
 			__( 'Fetch files from a Google Drive folder (native Docs exported to text, binaries streamed to disk).', 'data-machine-business' ),
 			true,
-			\DataMachineBusiness\OAuth\Providers\GoogleSheetsAuth::class,
+			\DataMachineBusiness\OAuth\Providers\GoogleAuth::class,
 			GoogleDriveFetchSettings::class,
 			null,
-			// Reuse the shared Google credential (slug: googlesheets).
-			// Drive scopes are unioned via the
-			// `datamachine_googlesheets_oauth_scopes` filter in the loader.
-			'googlesheets'
+			// Reuse the unified Google credential (slug: google). Drive
+			// scopes are unioned via the `datamachine_google_oauth_scopes`
+			// filter in the plugin loader.
+			'google'
 		);
 	}
 

@@ -35,9 +35,9 @@ class GoogleDriveSettings {
 	/**
 	 * Validate that the shared Google credential covers Drive scopes.
 	 *
-	 * Reuses the GoogleSheetsAuth provider — see the layer note in
-	 * data-machine-business.php for why both Sheets and Drive share a
-	 * single Google OAuth client and stored credential.
+	 * Reuses the unified GoogleAuth provider — see the layer note in
+	 * data-machine-business.php for why every Google handler in this
+	 * plugin shares one OAuth client and stored credential.
 	 *
 	 * Returns WP_Error when the user must re-consent to grant Drive
 	 * scopes. Never silently returns success in that case.
@@ -47,7 +47,7 @@ class GoogleDriveSettings {
 	 */
 	public static function validate_authentication( int $user_id ) {
 		$auth_abilities = new \DataMachine\Abilities\AuthAbilities();
-		$auth_provider  = $auth_abilities->getProvider( 'googlesheets' );
+		$auth_provider  = $auth_abilities->getProvider( 'google' );
 
 		if ( ! $auth_provider ) {
 			return new \WP_Error(
@@ -56,7 +56,7 @@ class GoogleDriveSettings {
 			);
 		}
 
-		if ( ! $auth_abilities->isHandlerAuthenticated( 'googlesheets' ) ) {
+		if ( ! $auth_abilities->isHandlerAuthenticated( 'google' ) ) {
 			return new \WP_Error(
 				'googledrive_not_authenticated',
 				__( 'Google authentication required. Connect a Google account in Data Machine settings.', 'data-machine-business' )

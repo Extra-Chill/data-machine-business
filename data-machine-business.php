@@ -50,7 +50,7 @@ function datamachine_business_load_handlers() {
 	new \DataMachineBusiness\Handlers\GoogleSheets\GoogleSheetsFetch();
 	new \DataMachineBusiness\Handlers\GoogleSheets\GoogleSheetsPublish();
 
-	// Google Drive (shares the GoogleSheetsAuth credential — see scope union below)
+	// Google Drive (shares the unified GoogleAuth credential — see scope union below)
 	new \DataMachineBusiness\Abilities\GoogleDrive\FetchGoogleDriveAbility();
 	new \DataMachineBusiness\Handlers\GoogleDrive\GoogleDriveFetch();
 
@@ -75,20 +75,21 @@ function datamachine_business_load_handlers() {
 add_action( 'plugins_loaded', 'datamachine_business_load_handlers', 20 );
 
 /**
- * Contribute Google Drive scopes to the shared Google OAuth credential.
+ * Contribute Google Drive scopes to the unified Google OAuth credential.
  *
- * The Sheets and Drive handlers share a single Google OAuth client
- * (registered under the `googlesheets` provider slug) so the user only
- * has to grant Data Machine access to Google once. Each handler family
- * declares the scopes it needs here; GoogleSheetsAuth::get_scopes()
- * unions and de-duplicates them at consent time.
+ * Every Google handler in this plugin (Sheets, Drive, future Calendar,
+ * etc.) shares a single Google OAuth client registered under the
+ * `google` provider slug so the user only has to grant Data Machine
+ * access to Google once. Each handler family declares the scopes it
+ * needs here; GoogleAuth::get_scopes() unions and de-duplicates them
+ * at consent time.
  *
- * Tokens issued before Drive was added will NOT contain Drive scopes.
- * Affected users must disconnect and reconnect the Google integration
- * to re-consent. The Drive handler surfaces a clear re-consent error
+ * Tokens issued before a scope was added will NOT contain it. Affected
+ * users must disconnect and reconnect the Google integration to
+ * re-consent. The Drive handler surfaces a clear re-consent error
  * (googledrive_scope_missing) rather than silently returning empty.
  */
-add_filter( 'datamachine_googlesheets_oauth_scopes', function ( array $scopes ): array {
+add_filter( 'datamachine_google_oauth_scopes', function ( array $scopes ): array {
 	foreach ( \DataMachineBusiness\Handlers\GoogleDrive\GoogleDriveSettings::required_scopes() as $scope ) {
 		if ( ! in_array( $scope, $scopes, true ) ) {
 			$scopes[] = $scope;

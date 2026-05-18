@@ -6,9 +6,9 @@
  * context. Any caller (REST, CLI, chat tool, pipeline handler) can
  * invoke this directly.
  *
- * Resolves auth via the shared `googlesheets` OAuth provider (single
- * Google credential covers both Sheets and Drive — see plugin loader
- * for the scope union).
+ * Resolves auth via the unified `google` OAuth provider — single
+ * credential covers every Google handler in this plugin. See the
+ * plugin loader for the scope union.
  *
  * Behavior:
  * - Lists files in a Drive folder via files.list with pagination.
@@ -694,11 +694,11 @@ class FetchGoogleDriveAbility {
 	}
 
 	/**
-	 * @return \DataMachineBusiness\OAuth\Providers\GoogleSheetsAuth|null
+	 * @return \DataMachineBusiness\OAuth\Providers\GoogleAuth|null
 	 */
-	private static function get_auth_provider(): ?\DataMachineBusiness\OAuth\Providers\GoogleSheetsAuth {
+	private static function get_auth_provider(): ?\DataMachineBusiness\OAuth\Providers\GoogleAuth {
 		$providers = apply_filters( 'datamachine_auth_providers', array() );
-		$provider  = $providers['googlesheets'] ?? null;
-		return $provider instanceof \DataMachineBusiness\OAuth\Providers\GoogleSheetsAuth ? $provider : null;
+		$provider  = $providers['google'] ?? null;
+		return $provider instanceof \DataMachineBusiness\OAuth\Providers\GoogleAuth ? $provider : null;
 	}
 }
