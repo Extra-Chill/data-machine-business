@@ -21,10 +21,88 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 class GoogleSheetsAuth extends \DataMachine\Core\OAuth\BaseOAuth2Provider {
 
+	/**
+	 * Default scope for the Sheets handlers.
+	 *
+	 * Additional scopes (e.g. Drive) are unioned at consent time via the
+	 * `datamachine_googlesheets_oauth_scopes` filter so that sibling Google
+	 * handlers in this plugin (Drive, future Calendar, etc.) can declare
+	 * the scopes they need without the provider knowing about them.
+	 */
 	const SCOPES = 'https://www.googleapis.com/auth/spreadsheets';
 
 	public function __construct() {
 		parent::__construct( 'googlesheets' );
+	}
+
+	/**
+	 * Get the full space-separated scope string for the authorization request.
+	 *
+	 * Unions the base Sheets scope with any additional scopes contributed by
+	 * other Google handlers via the `datamachine_googlesheets_oauth_scopes`
+	 * filter. Handlers should add scopes like:
+	 *
+	 *     add_filter( 'datamachine_googlesheets_oauth_scopes', function( $scopes ) {
+	 *         $scopes[] = 'https://www.googleapis.com/auth/drive.readonly';
+	 *         return $scopes;
+	 *     } );
+	 *
+	 * Existing tokens issued before a new scope was added will not have
+	 * that scope. Callers must check granted scopes (account['scope']) and
+	 * surface a re-consent error when a required scope is missing — do not
+	 * silently fall back.
+	 *
+	 * @since 0.3.0
+	 * @return string Space-separated scope string.
+	 */
+	public function get_scopes(): string {
+		$scopes = array_filter( array_map( 'trim', explode( ' ', self::SCOPES ) ) );
+
+		/**
+		 * Filters the OAuth scopes requested for the Google (Sheets/Drive/…) provider.
+		 *
+		 * Sibling Google handlers within this plugin add their required scopes
+		 * here. The provider unions and de-duplicates them at consent time.
+		 *
+		 * @since 0.3.0
+		 * @param string[] $scopes Array of scope URLs.
+		 */
+		$scopes = apply_filters( 'datamachine_googlesheets_oauth_scopes', $scopes );
+
+		// Normalize: trim, drop empties, de-duplicate, preserve order.
+		$normalized = array();
+		foreach ( (array) $scopes as $scope ) {
+			$scope = is_string( $scope ) ? trim( $scope ) : '';
+			if ( '' === $scope ) {
+				continue;
+			}
+			if ( ! in_array( $scope, $normalized, true ) ) {
+				$normalized[] = $scope;
+			}
+		}
+
+		return implode( ' ', $normalized );
+	}
+
+	/**
+	 * Check whether the granted token covers a specific scope.
+	 *
+	 * Use this from handlers before making a scoped API call so you can
+	 * surface a clear re-consent error instead of letting the upstream
+	 * API return a vague 403.
+	 *
+	 * @since 0.3.0
+	 * @param string $required_scope Scope URL to check for.
+	 * @return bool True when the granted scope string includes the scope.
+	 */
+	public function has_scope( string $required_scope ): bool {
+		$account = $this->get_account();
+		if ( empty( $account['scope'] ) || ! is_string( $account['scope'] ) ) {
+			return false;
+		}
+
+		$granted = array_filter( array_map( 'trim', explode( ' ', $account['scope'] ) ) );
+		return in_array( $required_scope, $granted, true );
 	}
 
 	/**
@@ -223,7 +301,7 @@ class GoogleSheetsAuth extends \DataMachine\Core\OAuth\BaseOAuth2Provider {
 		$params = array(
 			'client_id' => $client_id,
 			'redirect_uri' => $this->get_callback_url(),
-			'scope' => self::SCOPES,
+			'scope' => $this->get_scopes(),
 			'response_type' => 'code',
 			'access_type' => 'offline', // Google-specific: request refresh token
 			'prompt' => 'consent', // Google-specific: force consent to ensure refresh token
@@ -280,7 +358,7 @@ class GoogleSheetsAuth extends \DataMachine\Core\OAuth\BaseOAuth2Provider {
 					'access_token' => $token_data['access_token'],
 					'refresh_token' => $token_data['refresh_token'] ?? null,
 					'expires_at' => time() + ( $token_data['expires_in'] ?? 3600 ),
-					'scope' => $token_data['scope'] ?? self::SCOPES,
+					'scope' => $token_data['scope'] ?? $this->get_scopes(),
 					'last_verified_at' => time(),
 				);
 			},
