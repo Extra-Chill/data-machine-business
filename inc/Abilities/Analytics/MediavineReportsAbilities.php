@@ -701,9 +701,9 @@ class MediavineReportsAbilities {
 	 */
 	public static function normalizeReportMeta( array $meta ): array {
 		return array(
-			'totalCount'  => array_key_exists( 'totalCount', $meta ) ? (int) $meta['totalCount'] : null,
-			'reportStart' => array_key_exists( 'reportStart', $meta ) ? (string) $meta['reportStart'] : null,
-			'reportEnd'   => array_key_exists( 'reportEnd', $meta ) ? (string) $meta['reportEnd'] : null,
+			'totalCount'  => isset( $meta['totalCount'] ) ? (int) $meta['totalCount'] : null,
+			'reportStart' => isset( $meta['reportStart'] ) ? (string) $meta['reportStart'] : null,
+			'reportEnd'   => isset( $meta['reportEnd'] ) ? (string) $meta['reportEnd'] : null,
 		);
 	}
 

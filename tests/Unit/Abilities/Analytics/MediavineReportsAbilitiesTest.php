@@ -330,6 +330,38 @@ class MediavineReportsAbilitiesTest extends WP_UnitTestCase {
 		}
 	}
 
+	public function test_registered_ability_schema_validates_explicit_null_metadata_for_all_actions(): void {
+		$ability = wp_get_ability( 'datamachine/mediavine-reports' );
+
+		$this->assertNotNull( $ability, 'The test must exercise the registered Mediavine ability.' );
+		$schema = $ability->get_output_schema();
+		$relay  = base64_encode( 'InternalSite:11476' );
+		$meta   = MediavineReportsAbilities::normalizeReportMeta(
+			array(
+				'totalCount'  => null,
+				'reportStart' => null,
+				'reportEnd'   => null,
+			)
+		);
+		$row    = array( 'slug' => '/music/example/', 'period' => '2026-06' );
+
+		$pages    = MediavineReportsAbilities::buildPagesResult( '11476', $relay, '2026-06-01', '2026-06-30', '2026-06', array( 'rows' => array( $row ), 'meta' => $meta ) );
+		$summary  = MediavineReportsAbilities::buildSummaryResult( '11476', $relay, '2026-06-01', '2026-06-30', array( 'period' => '2026-06' ), $meta );
+		$period   = MediavineReportsAbilities::buildBackfillPeriodSummary( '11476', $relay, '2026-06', '2026-06-01', '2026-06-30', 1, $meta );
+		$backfill = MediavineReportsAbilities::buildBackfillResult( '11476', $relay, array( $period ), array( $row ) );
+
+		foreach ( array( 'pages' => $pages, 'summary' => $summary, 'backfill' => $backfill ) as $action => $output ) {
+			$validated = rest_validate_value_from_schema( $output, $schema, 'output' );
+			$this->assertTrue( $validated, $action . ' output failed registered schema validation: ' . ( is_wp_error( $validated ) ? $validated->get_error_message() : '' ) );
+		}
+
+		foreach ( array( $pages['provenance'], $summary['provenance'], $backfill['periods'][0]['provenance'] ) as $provenance ) {
+			$this->assertNull( $provenance['period']['canonical']['start'] );
+			$this->assertNull( $provenance['period']['canonical']['end'] );
+			$this->assertNull( $provenance['period']['row_count'] );
+		}
+	}
+
 	/**
 	 * Layer purity: the generic ability source contains no Extra Chill
 	 * domain/route special cases.
