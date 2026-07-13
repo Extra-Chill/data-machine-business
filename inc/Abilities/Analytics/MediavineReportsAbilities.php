@@ -268,7 +268,10 @@ class MediavineReportsAbilities {
 					'required'   => array( 'ability', 'action', 'operation', 'api' ),
 					'properties' => array(
 						'ability'   => array( 'type' => 'string' ),
-						'action'    => array( 'type' => 'string', 'enum' => array( 'pages', 'summary', 'backfill' ) ),
+						'action'    => array(
+							'type' => 'string',
+							'enum' => array( 'pages', 'summary', 'backfill' ),
+						),
 						'operation' => array( 'type' => 'string' ),
 						'api'       => array( 'type' => 'string' ),
 					),
