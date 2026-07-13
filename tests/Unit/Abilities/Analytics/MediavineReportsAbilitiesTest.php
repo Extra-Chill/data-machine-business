@@ -12,6 +12,22 @@ use WP_UnitTestCase;
 
 class MediavineReportsAbilitiesTest extends WP_UnitTestCase {
 
+	/**
+	 * pre_http_request callbacks registered during a test, removed on tearDown.
+	 *
+	 * @var callable[]
+	 */
+	protected array $http_filters = array();
+
+	protected function tearDown(): void {
+		foreach ( $this->http_filters as $callback ) {
+			remove_filter( 'pre_http_request', $callback, 10 );
+		}
+		$this->http_filters = array();
+
+		parent::tearDown();
+	}
+
 	public function test_pages_request_uses_current_graphql_contract(): void {
 		$body = MediavineReportsAbilities::buildPagesRequestBody( 'global-id', '2026-06-01', '2026-06-30' );
 
@@ -370,5 +386,310 @@ class MediavineReportsAbilitiesTest extends WP_UnitTestCase {
 		$source = file_get_contents( dirname( __DIR__, 4 ) . '/inc/Abilities/Analytics/MediavineReportsAbilities.php' );
 
 		$this->assertDoesNotMatchRegularExpression( '/extrachill\.com|community\.extra|events\.extra|wire\.extra|artist\.extra/i', $source );
+	}
+
+	/**
+	 * Provide Mediavine config, a cached bearer token, and an administrator
+	 * context so the registered ability's full execute() path (input
+	 * validation -> permission check -> execute_callback -> output validation)
+	 * can run end-to-end without a real network round-trip or login mutation.
+	 *
+	 * @return int Administrator user id exercising the ability.
+	 */
+	private function enable_mediavine_runtime(): int {
+		update_site_option(
+			MediavineReportsAbilities::CONFIG_OPTION,
+			array(
+				'email'    => 'tester@example.test',
+				'password' => 'test-password',
+			)
+		);
+		set_transient( MediavineReportsAbilities::TOKEN_TRANSIENT, 'cached-bearer-token', HOUR_IN_SECONDS );
+
+		$user_id = self::factory()->user->create( array( 'role' => 'administrator' ) );
+		wp_set_current_user( $user_id );
+
+		return $user_id;
+	}
+
+	/**
+	 * Intercept Mediavine GraphQL HTTP requests during a test.
+	 *
+	 * The responder receives the GraphQL operation name and the request's
+	 * startDate variable, and returns either:
+	 *   - a JSON string for a successful 200 response,
+	 *   - true to simulate an upstream failure (non-2xx), or
+	 *   - null to leave the request unhandled.
+	 */
+	private function stub_mediavine_http( callable $responder ): void {
+		$callback = function ( $preempt, $parsed_args, $url ) use ( $responder ) {
+			if ( false === strpos( $url, 'api-publishers.mediavine.com/graphql' ) ) {
+				return $preempt;
+			}
+
+			$raw_body = $parsed_args['body'] ?? '';
+			$decoded  = is_string( $raw_body ) ? json_decode( $raw_body, true ) : null;
+			$op       = is_array( $decoded ) ? (string) ( $decoded['operationName'] ?? '' ) : '';
+			$start    = is_array( $decoded ) ? (string) ( $decoded['variables']['data']['startDate'] ?? '' ) : '';
+
+			$body = $responder( $op, $start );
+
+			if ( null === $body ) {
+				return $preempt;
+			}
+
+			if ( true === $body ) {
+				return array(
+					'headers'  => array(),
+					'body'     => '',
+					'response' => array( 'code' => 503, 'message' => 'Service Unavailable' ),
+					'cookies'  => array(),
+					'filename' => null,
+				);
+			}
+
+			return array(
+				'headers'  => array(),
+				'body'     => $body,
+				'response' => array( 'code' => 200, 'message' => 'OK' ),
+				'cookies'  => array(),
+				'filename' => null,
+			);
+		};
+
+		add_filter( 'pre_http_request', $callback, 10, 3 );
+		$this->http_filters[] = $callback;
+	}
+
+	/**
+	 * Exercise the ACTUAL registered ability execute() path for the pages
+	 * action — not a pure builder — with upstream metadata omitted, then prove
+	 * the real output validates against the registered output schema and that
+	 * null provenance surfaces rather than failing validation.
+	 */
+	public function test_pages_action_runs_through_registered_ability_and_validates_with_omitted_metadata(): void {
+		$this->enable_mediavine_runtime();
+
+		$pages_body = wp_json_encode(
+			array(
+				'data' => array(
+					'pagesSummary' => array(
+						// No upstream `meta` block -> canonical period + row_count
+						// must be null and the output must still validate.
+						'pages' => array(
+							array(
+								'path'                   => '/music/example/',
+								'pageviews'              => 1250.0,
+								'pageRevenue'            => 18.75,
+								'rpm'                    => 15.0,
+								'cpm'                    => 2.5,
+								'viewability'            => 0.72,
+								'fillrate'               => 0.94,
+								'impressionsPerPageView' => 4.2,
+							),
+						),
+					),
+				),
+			)
+		);
+
+		$this->stub_mediavine_http(
+			static fn( $op ) => 'PagesSummaryQuery' === $op ? $pages_body : null
+		);
+
+		$ability = wp_get_ability( 'datamachine/mediavine-reports' );
+		$this->assertNotNull( $ability, 'The registered Mediavine ability must be available to execute.' );
+
+		$result = $ability->execute(
+			array(
+				'action'     => 'pages',
+				'site_id'    => '11476',
+				'start_date' => '2026-06-01',
+				'end_date'   => '2026-06-30',
+				'period'     => '2026-06',
+			)
+		);
+
+		// execute() validates output against the registered schema internally;
+		// a WP_Error here means the real execute output failed schema validation.
+		$this->assertNotWPError( $result, is_wp_error( $result ) ? $result->get_error_message() : '' );
+		$this->assertTrue( $result['success'] );
+		$this->assertSame( 'pages', $result['action'] );
+
+		$validated = rest_validate_value_from_schema( $result, $ability->get_output_schema(), 'output' );
+		$this->assertTrue( $validated, is_wp_error( $validated ) ? $validated->get_error_message() : '' );
+
+		// Omitted upstream metadata surfaces as null provenance, not a validation failure.
+		$this->assertNull( $result['provenance']['period']['canonical']['start'] );
+		$this->assertNull( $result['provenance']['period']['canonical']['end'] );
+		$this->assertNull( $result['provenance']['period']['row_count'] );
+
+		// Caller-requested site id is preserved separately from the normalized Relay id.
+		$this->assertSame( '11476', $result['provenance']['site']['requested_id'] );
+		$this->assertSame( $result['site_id'], $result['provenance']['site']['relay_id'] );
+		$this->assertSame( '11476', $result['provenance']['site']['internal_id'] );
+
+		// The pages action carries the page-report host-attribution reason.
+		$this->assertStringContainsString( 'PageReport', $result['provenance']['host_attribution']['reason'] );
+
+		// No credentials leak through the real execute path.
+		$blob = wp_json_encode( $result );
+		$this->assertStringNotContainsString( 'test-password', $blob );
+		$this->assertStringNotContainsString( 'cached-bearer-token', $blob );
+	}
+
+	/**
+	 * Exercise the ACTUAL registered ability execute() path for the summary
+	 * action with upstream metadata omitted, and confirm the summary carries
+	 * its own summary-appropriate host-attribution reason.
+	 */
+	public function test_summary_action_runs_through_registered_ability_and_validates_with_omitted_metadata(): void {
+		$this->enable_mediavine_runtime();
+
+		$summary_body = wp_json_encode(
+			array(
+				'data' => array(
+					'metricsSummary' => array(
+						// No upstream `meta` -> canonical period null and still valid.
+						'summary' => array(
+							'earnings'        => 18.75,
+							'pageviews'       => 1250,
+							'sessions'        => 900,
+							'cpm'             => 2.5,
+							'sessionRpm'      => 20.83,
+							'pageRpm'         => 15.0,
+							'paidImpressions' => 7500,
+						),
+					),
+				),
+			)
+		);
+
+		$this->stub_mediavine_http(
+			static fn( $op ) => 'MetricsSummaryQuery' === $op ? $summary_body : null
+		);
+
+		$ability = wp_get_ability( 'datamachine/mediavine-reports' );
+		$result  = $ability->execute(
+			array(
+				'action'     => 'summary',
+				'site_id'    => '11476',
+				'start_date' => '2026-06-01',
+				'end_date'   => '2026-06-30',
+				'period'     => '2026-06',
+			)
+		);
+
+		$this->assertNotWPError( $result, is_wp_error( $result ) ? $result->get_error_message() : '' );
+		$this->assertSame( 'summary', $result['action'] );
+
+		$validated = rest_validate_value_from_schema( $result, $ability->get_output_schema(), 'output' );
+		$this->assertTrue( $validated, is_wp_error( $validated ) ? $validated->get_error_message() : '' );
+
+		// Summary carries its own summary-appropriate host-attribution reason, not the page-report one.
+		$this->assertStringContainsString( 'site-level aggregate', $result['provenance']['host_attribution']['reason'] );
+		$this->assertStringNotContainsString( 'PageReport', $result['provenance']['host_attribution']['reason'] );
+		$this->assertSame( 'MetricsSummaryQuery', $result['provenance']['source']['operation'] );
+
+		$this->assertNull( $result['provenance']['period']['canonical']['start'] );
+		$this->assertNull( $result['provenance']['period']['row_count'] );
+	}
+
+	/**
+	 * Exercise the ACTUAL registered ability execute() path for backfill with a
+	 * successful period (canonical metadata present) and a failed period
+	 * (transport failure). Both period summaries must carry provenance, the
+	 * failed period must still validate, and the top-level provenance must span
+	 * the full requested window.
+	 */
+	public function test_backfill_action_runs_through_registered_ability_with_successful_and_failed_periods(): void {
+		$this->enable_mediavine_runtime();
+
+		$success_body = wp_json_encode(
+			array(
+				'data' => array(
+					'pagesSummary' => array(
+						'meta'  => array(
+							'totalCount'  => 12,
+							'reportStart' => '2026/05/01',
+							'reportEnd'   => '2026/05/31',
+						),
+						'pages' => array(
+							array( 'path' => '/a/', 'pageRevenue' => 1.0 ),
+							array( 'path' => '/b/', 'pageRevenue' => 2.0 ),
+						),
+					),
+				),
+			)
+		);
+
+		$this->stub_mediavine_http(
+			static function ( $op, $start ) use ( $success_body ) {
+				if ( 'PagesSummaryQuery' !== $op ) {
+					return null;
+				}
+				// May 2026 succeeds; June 2026 fails upstream.
+				return str_starts_with( $start, '2026-06-01' ) ? true : $success_body;
+			}
+		);
+
+		$ability = wp_get_ability( 'datamachine/mediavine-reports' );
+		$result  = $ability->execute(
+			array(
+				'action'  => 'backfill',
+				'site_id' => '11476',
+				'periods' => array(
+					array(
+						'period'     => '2026-05',
+						'start_date' => '2026-05-01',
+						'end_date'   => '2026-05-31',
+					),
+					array(
+						'period'     => '2026-06',
+						'start_date' => '2026-06-01',
+						'end_date'   => '2026-06-30',
+					),
+				),
+			)
+		);
+
+		$this->assertNotWPError( $result, is_wp_error( $result ) ? $result->get_error_message() : '' );
+		$this->assertSame( 'backfill', $result['action'] );
+
+		$validated = rest_validate_value_from_schema( $result, $ability->get_output_schema(), 'output' );
+		$this->assertTrue( $validated, is_wp_error( $validated ) ? $validated->get_error_message() : '' );
+
+		$periods = $result['periods'];
+		$this->assertCount( 2, $periods );
+
+		// Successful period keeps its canonical provenance with the backfill action.
+		$this->assertSame( 'backfill', $periods[0]['provenance']['source']['action'] );
+		$this->assertSame( '2026/05/01', $periods[0]['provenance']['period']['canonical']['start'] );
+		$this->assertSame( '2026/05/31', $periods[0]['provenance']['period']['canonical']['end'] );
+		$this->assertSame( 12, $periods[0]['provenance']['period']['row_count'] );
+		$this->assertSame( 2, $periods[0]['rows'] );
+		$this->assertArrayNotHasKey( 'error', $periods[0] );
+
+		// Failed period still carries provenance (null metadata) plus the per-period error.
+		$this->assertSame( 'backfill', $periods[1]['provenance']['source']['action'] );
+		$this->assertNull( $periods[1]['provenance']['period']['canonical']['start'] );
+		$this->assertNull( $periods[1]['provenance']['period']['row_count'] );
+		$this->assertSame( 0, $periods[1]['rows'] );
+		$this->assertNotEmpty( $periods[1]['error'] );
+
+		// Top-level provenance spans the full requested window with null canonical metadata.
+		$this->assertSame( 'backfill', $result['provenance']['source']['action'] );
+		$this->assertSame( '2026-05-01', $result['provenance']['period']['requested']['start'] );
+		$this->assertSame( '2026-06-30', $result['provenance']['period']['requested']['end'] );
+		$this->assertNull( $result['provenance']['period']['row_count'] );
+
+		// Caller-requested site id preserved separately from the normalized Relay id.
+		$this->assertSame( '11476', $result['provenance']['site']['requested_id'] );
+		$this->assertSame( '11476', $result['provenance']['site']['internal_id'] );
+
+		// No credentials leak through the real execute path.
+		$blob = wp_json_encode( $result );
+		$this->assertStringNotContainsString( 'test-password', $blob );
+		$this->assertStringNotContainsString( 'cached-bearer-token', $blob );
 	}
 }
