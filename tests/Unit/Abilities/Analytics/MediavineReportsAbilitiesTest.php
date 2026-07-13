@@ -92,13 +92,14 @@ class MediavineReportsAbilitiesTest extends WP_UnitTestCase {
 	public function test_provenance_carries_requested_and_canonical_period_boundaries(): void {
 		$relay  = base64_encode( 'InternalSite:11476' );
 		$meta   = array( 'reportStart' => '2026/06/01', 'reportEnd' => '2026/06/30', 'totalCount' => 208 );
-		$prov   = MediavineReportsAbilities::buildProvenance( 'pages', 'PagesSummaryQuery', $relay, '2026-06-01', '2026-06-30', $meta );
+		$prov   = MediavineReportsAbilities::buildProvenance( 'pages', 'PagesSummaryQuery', '11476', $relay, '2026-06-01', '2026-06-30', $meta );
 
 		$this->assertSame( 'datamachine/mediavine-reports', $prov['source']['ability'] );
 		$this->assertSame( 'pages', $prov['source']['action'] );
 		$this->assertSame( 'PagesSummaryQuery', $prov['source']['operation'] );
 
-		$this->assertSame( $relay, $prov['site']['requested_id'] );
+		$this->assertSame( '11476', $prov['site']['requested_id'] );
+		$this->assertSame( $relay, $prov['site']['relay_id'] );
 		$this->assertSame( '11476', $prov['site']['internal_id'] );
 
 		$this->assertSame( '2026-06-01', $prov['period']['requested']['start'] );
@@ -109,7 +110,8 @@ class MediavineReportsAbilitiesTest extends WP_UnitTestCase {
 	}
 
 	public function test_provenance_canonical_period_is_null_when_upstream_omits_meta(): void {
-		$prov = MediavineReportsAbilities::buildProvenance( 'backfill', 'PagesSummaryQuery', '11476', '2026-01-01', '2026-03-31', array() );
+		$relay = base64_encode( 'InternalSite:11476' );
+		$prov  = MediavineReportsAbilities::buildProvenance( 'backfill', 'PagesSummaryQuery', '11476', $relay, '2026-01-01', '2026-03-31', array() );
 
 		$this->assertNull( $prov['period']['canonical']['start'] );
 		$this->assertNull( $prov['period']['canonical']['end'] );
@@ -121,7 +123,8 @@ class MediavineReportsAbilitiesTest extends WP_UnitTestCase {
 	 * Provenance must encode that as structured "unavailable", never synthesize.
 	 */
 	public function test_provenance_reports_host_attribution_unavailable(): void {
-		$prov = MediavineReportsAbilities::buildProvenance( 'pages', 'PagesSummaryQuery', '11476', '2026-06-01', '2026-06-30', array() );
+		$relay = base64_encode( 'InternalSite:11476' );
+		$prov  = MediavineReportsAbilities::buildProvenance( 'pages', 'PagesSummaryQuery', '11476', $relay, '2026-06-01', '2026-06-30', array() );
 
 		$this->assertFalse( $prov['host_attribution']['available'] );
 		$this->assertNotEmpty( $prov['host_attribution']['reason'] );
@@ -182,12 +185,14 @@ class MediavineReportsAbilitiesTest extends WP_UnitTestCase {
 			'meta' => array( 'reportStart' => '2026/06/01', 'reportEnd' => '2026/06/30', 'totalCount' => 1 ),
 		);
 
-		$result = MediavineReportsAbilities::buildPagesResult( $relay, '2026-06-01', '2026-06-30', '2026-06', $parsed );
+		$result = MediavineReportsAbilities::buildPagesResult( '11476', $relay, '2026-06-01', '2026-06-30', '2026-06', $parsed );
 
 		$this->assertSame( 'pages', $result['action'] );
 		$this->assertSame( $relay, $result['site_id'] );
 		$this->assertSame( 1, $result['results_count'] );
 		$this->assertArrayHasKey( 'provenance', $result );
+		$this->assertSame( '11476', $result['provenance']['site']['requested_id'] );
+		$this->assertSame( $relay, $result['provenance']['site']['relay_id'] );
 		$this->assertSame( '11476', $result['provenance']['site']['internal_id'] );
 		$this->assertSame( '2026/06/01', $result['provenance']['period']['canonical']['start'] );
 		$this->assertFalse( $result['provenance']['host_attribution']['available'] );
@@ -197,12 +202,14 @@ class MediavineReportsAbilitiesTest extends WP_UnitTestCase {
 		$relay  = base64_encode( 'InternalSite:11476' );
 		$srow   = array( 'period' => '2026-06', 'earnings' => 1.0 );
 		$meta   = array( 'reportStart' => '2026/06/01', 'reportEnd' => '2026/06/30', 'totalCount' => null );
-		$result = MediavineReportsAbilities::buildSummaryResult( $relay, '2026-06-01', '2026-06-30', $srow, $meta );
+		$result = MediavineReportsAbilities::buildSummaryResult( '11476', $relay, '2026-06-01', '2026-06-30', $srow, $meta );
 
 		$this->assertSame( 'summary', $result['action'] );
 		$this->assertArrayHasKey( 'provenance', $result );
 		$this->assertSame( 'MetricsSummaryQuery', $result['provenance']['source']['operation'] );
 		$this->assertSame( '2026/06/01', $result['provenance']['period']['canonical']['start'] );
+		$this->assertStringContainsString( 'site-level aggregate', $result['provenance']['host_attribution']['reason'] );
+		$this->assertStringNotContainsString( 'PageReport', $result['provenance']['host_attribution']['reason'] );
 
 		// The summary GraphQL query must request the canonical meta block too.
 		$source = file_get_contents( dirname( __DIR__, 4 ) . '/inc/Abilities/Analytics/MediavineReportsAbilities.php' );
@@ -213,15 +220,16 @@ class MediavineReportsAbilitiesTest extends WP_UnitTestCase {
 		$relay = base64_encode( 'InternalSite:11476' );
 		$meta  = array( 'reportStart' => '2026/05/01', 'reportEnd' => '2026/05/31', 'totalCount' => 12 );
 
-		$period_one = MediavineReportsAbilities::buildBackfillPeriodSummary( $relay, '2026-05', '2026-05-01', '2026-05-31', 12, $meta );
-		$period_two = MediavineReportsAbilities::buildBackfillPeriodSummary( $relay, '2026-06', '2026-06-01', '2026-06-30', 7, $meta );
+		$period_one = MediavineReportsAbilities::buildBackfillPeriodSummary( '11476', $relay, '2026-05', '2026-05-01', '2026-05-31', 12, $meta );
+		$period_two = MediavineReportsAbilities::buildBackfillPeriodSummary( '11476', $relay, '2026-06', '2026-06-01', '2026-06-30', 7, $meta );
 
 		$this->assertArrayHasKey( 'provenance', $period_one );
 		$this->assertArrayHasKey( 'provenance', $period_two );
 		$this->assertSame( '2026-05-01', $period_one['provenance']['period']['requested']['start'] );
+		$this->assertSame( 'backfill', $period_one['provenance']['source']['action'] );
 		$this->assertFalse( $period_two['provenance']['host_attribution']['available'] );
 
-		$result = MediavineReportsAbilities::buildBackfillResult( $relay, array( $period_one, $period_two ), array_fill( 0, 19, array( 'slug' => '/x/' ) ) );
+		$result = MediavineReportsAbilities::buildBackfillResult( '11476', $relay, array( $period_one, $period_two ), array_fill( 0, 19, array( 'slug' => '/x/' ) ) );
 
 		$this->assertSame( 'backfill', $result['action'] );
 		$this->assertSame( 19, $result['results_count'] );
@@ -233,7 +241,7 @@ class MediavineReportsAbilitiesTest extends WP_UnitTestCase {
 
 	public function test_backfill_period_summary_records_error_without_losing_provenance(): void {
 		$relay   = base64_encode( 'InternalSite:11476' );
-		$summary = MediavineReportsAbilities::buildBackfillPeriodSummary( $relay, '2026-05', '2026-05-01', '2026-05-31', 0, array(), 'upstream failure' );
+		$summary = MediavineReportsAbilities::buildBackfillPeriodSummary( '11476', $relay, '2026-05', '2026-05-01', '2026-05-31', 0, array(), 'upstream failure' );
 
 		$this->assertSame( 0, $summary['rows'] );
 		$this->assertSame( 'upstream failure', $summary['error'] );
@@ -252,15 +260,74 @@ class MediavineReportsAbilitiesTest extends WP_UnitTestCase {
 			'meta' => array( 'reportStart' => '2026/06/01', 'reportEnd' => '2026/06/30', 'totalCount' => 1 ),
 		);
 
-		$blob  = wp_json_encode( MediavineReportsAbilities::buildPagesResult( $relay, '2026-06-01', '2026-06-30', '2026-06', $parsed ) );
-		$blob .= wp_json_encode( MediavineReportsAbilities::buildSummaryResult( $relay, '2026-06-01', '2026-06-30', array( 'period' => '2026-06' ), $parsed['meta'] ) );
-		$blob .= wp_json_encode( MediavineReportsAbilities::buildBackfillResult( $relay, array(), array() ) );
-		$blob .= wp_json_encode( MediavineReportsAbilities::buildProvenance( 'pages', 'PagesSummaryQuery', $relay, '2026-06-01', '2026-06-30', $parsed['meta'] ) );
+		$blob  = wp_json_encode( MediavineReportsAbilities::buildPagesResult( '11476', $relay, '2026-06-01', '2026-06-30', '2026-06', $parsed ) );
+		$blob .= wp_json_encode( MediavineReportsAbilities::buildSummaryResult( '11476', $relay, '2026-06-01', '2026-06-30', array( 'period' => '2026-06' ), $parsed['meta'] ) );
+		$blob .= wp_json_encode( MediavineReportsAbilities::buildBackfillResult( '11476', $relay, array(), array() ) );
+		$blob .= wp_json_encode( MediavineReportsAbilities::buildProvenance( 'pages', 'PagesSummaryQuery', '11476', $relay, '2026-06-01', '2026-06-30', $parsed['meta'] ) );
 
 		$this->assertStringNotContainsString( 'password', $blob );
 		$this->assertStringNotContainsString( 'Bearer ', $blob );
 		$this->assertStringNotContainsString( 'accessToken', $blob );
 		$this->assertStringNotContainsString( 'refreshToken', $blob );
+	}
+
+	public function test_registered_ability_schema_fully_describes_result_and_period_items(): void {
+		$ability = wp_get_ability( 'datamachine/mediavine-reports' );
+
+		$this->assertNotNull( $ability, 'The test must exercise the registered Mediavine ability.' );
+		$schema = $ability->get_output_schema();
+
+		$this->assertArrayHasKey( 'site_id', $schema['properties'] );
+		$this->assertArrayHasKey( 'date_range', $schema['properties'] );
+		$this->assertArrayHasKey( 'properties', $schema['properties']['results']['items'] );
+		$this->assertArrayHasKey( 'slug', $schema['properties']['results']['items']['properties'] );
+		$this->assertArrayHasKey( 'earnings', $schema['properties']['results']['items']['properties'] );
+		$this->assertArrayHasKey( 'properties', $schema['properties']['periods']['items'] );
+		$this->assertArrayHasKey( 'provenance', $schema['properties']['periods']['items']['properties'] );
+		$this->assertSame( array( 'string', 'null' ), $schema['properties']['provenance']['properties']['site']['properties']['internal_id']['type'] );
+		$this->assertSame( array( 'integer', 'null' ), $schema['properties']['provenance']['properties']['period']['properties']['row_count']['type'] );
+	}
+
+	public function test_registered_ability_schema_validates_all_action_outputs_with_omitted_metadata(): void {
+		$ability = wp_get_ability( 'datamachine/mediavine-reports' );
+
+		$this->assertNotNull( $ability, 'The test must exercise the registered Mediavine ability.' );
+		$schema = $ability->get_output_schema();
+		$relay  = base64_encode( 'InternalSite:11476' );
+		$row    = array(
+			'slug'                   => '/music/example/',
+			'views'                  => 1250,
+			'revenue'                => 18.75,
+			'rpm'                    => 15.0,
+			'cpm'                    => 2.5,
+			'viewability'            => 0.72,
+			'fillRate'               => 0.94,
+			'impressionsPerPageview' => 4.2,
+			'period'                 => '2026-06',
+		);
+		$summary_row = array(
+			'period'          => '2026-06',
+			'earnings'        => 18.75,
+			'pageviews'       => 1250,
+			'sessions'        => 900,
+			'cpm'             => 2.5,
+			'sessionRpm'      => 20.83,
+			'pageRpm'         => 15.0,
+			'paidImpressions' => 7500,
+		);
+
+		$pages  = MediavineReportsAbilities::buildPagesResult( '11476', $relay, '2026-06-01', '2026-06-30', '2026-06', array( 'rows' => array( $row ) ) );
+		$summary = MediavineReportsAbilities::buildSummaryResult( '11476', $relay, '2026-06-01', '2026-06-30', $summary_row );
+		$period  = MediavineReportsAbilities::buildBackfillPeriodSummary( '11476', $relay, '2026-06', '2026-06-01', '2026-06-30', 1 );
+		$backfill = MediavineReportsAbilities::buildBackfillResult( '11476', $relay, array( $period ), array( $row ) );
+
+		foreach ( array( 'pages' => $pages, 'summary' => $summary, 'backfill' => $backfill ) as $action => $output ) {
+			$validated = rest_validate_value_from_schema( $output, $schema, 'output' );
+			$this->assertTrue( $validated, $action . ' output failed registered schema validation: ' . ( is_wp_error( $validated ) ? $validated->get_error_message() : '' ) );
+			$this->assertNull( $output['provenance']['period']['canonical']['start'] );
+			$this->assertNull( $output['provenance']['period']['canonical']['end'] );
+			$this->assertNull( $output['provenance']['period']['row_count'] );
+		}
 	}
 
 	/**
