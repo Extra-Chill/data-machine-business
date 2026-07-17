@@ -21,6 +21,7 @@ The dimensional CLI accepts `--site-id`, `--start-date`, `--end-date`, `--period
 `devices` preserves `label`, pageview/session counts and RPM, revenue, monetizable counts, and monetizable RPM.
 
 `countries` preserves `country`, pageview/session counts and percentages, net/page revenue, impressions, paid impressions, CPM, fill rate, viewability, pageview/session RPM, monetizable counts and percentages, and monetizable RPM.
+Mediavine returns country `netRevenue` in 1/10,000 dollar units; the ability normalizes it to dollars so it matches the source report's public `netRevenue` semantics.
 
 `sources` preserves `source`, revenue/net revenue, pageviews, sessions, impressions, pageview/session RPM, monetizable counts/RPM, and impression-per-pageview/session metrics. `source` is Mediavine's normalized acquisition bucket. It is not a raw referrer URL/domain and is not GA4 source/medium.
 

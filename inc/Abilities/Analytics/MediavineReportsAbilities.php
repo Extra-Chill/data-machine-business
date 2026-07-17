@@ -1123,6 +1123,11 @@ class MediavineReportsAbilities {
 
 		foreach ( $field_types as $field => $type ) {
 			$value = $row[ $field ] ?? null;
+			// Country netRevenue is returned in 1/10,000 dollar units, unlike the
+			// dollar-denominated source report field with the same name.
+			if ( 'countries' === $action && 'netRevenue' === $field && null !== $value ) {
+				$value = (float) $value / 10000;
+			}
 			if ( 'string' === $type ) {
 				$normalized[ $field ] = null === $value ? null : (string) $value;
 			} elseif ( 'integer' === $type ) {
