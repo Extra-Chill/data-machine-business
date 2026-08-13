@@ -333,14 +333,13 @@ class MediaHygieneAbility {
 		}
 
 		$attached = array_flip( array_map( 'strval', MediaHygieneScanner::attached_file_index() ) );
-		$variants = MediaHygieneScanner::variant_index();
+		$variants = MediaHygieneScanner::appended_variant_index(
+			$attached + MediaHygieneScanner::variant_index()
+		);
 
 		$orphans = array();
 		foreach ( $files as $file ) {
 			$rel = $file['relative'];
-			if ( isset( $attached[ $rel ] ) ) {
-				continue;
-			}
 			if ( isset( $variants[ $rel ] ) ) {
 				continue;
 			}
