@@ -23,9 +23,32 @@ class MediaHygieneScanner {
 	 * filter.
 	 */
 	private const DEFAULT_EXTENSIONS = array(
-		'jpg', 'jpeg', 'png', 'gif', 'webp', 'avif', 'svg', 'bmp', 'ico', 'tiff',
-		'mp4', 'mov', 'webm', 'ogv', 'mp3', 'wav', 'm4a', 'ogg',
-		'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'zip',
+		'jpg',
+		'jpeg',
+		'png',
+		'gif',
+		'webp',
+		'avif',
+		'svg',
+		'bmp',
+		'ico',
+		'tiff',
+		'mp4',
+		'mov',
+		'webm',
+		'ogv',
+		'mp3',
+		'wav',
+		'm4a',
+		'ogg',
+		'pdf',
+		'doc',
+		'docx',
+		'xls',
+		'xlsx',
+		'ppt',
+		'pptx',
+		'zip',
 	);
 
 	/**
@@ -122,6 +145,8 @@ class MediaHygieneScanner {
 			new \RecursiveCallbackFilterIterator(
 				new \RecursiveDirectoryIterator( $basedir, \FilesystemIterator::SKIP_DOTS ),
 				static function ( $file, $key, $iterator ) use ( $basedir, $ignored ) {
+					unset( $key );
+					unset( $iterator );
 					if ( $file->isDir() ) {
 						$name = strtolower( $file->getFilename() );
 						if ( in_array( $name, $ignored, true ) ) {
@@ -224,7 +249,7 @@ class MediaHygieneScanner {
 		}
 
 		foreach ( $rows as $blob ) {
-			$meta = @maybe_unserialize( $blob );
+			$meta = maybe_unserialize( $blob );
 			if ( ! is_array( $meta ) ) {
 				continue;
 			}
@@ -322,13 +347,21 @@ class MediaHygieneScanner {
 				continue;
 			}
 			$abs  = $basedir . '/' . $file;
-			$size = is_readable( $abs ) ? (int) @filesize( $abs ) : 0;
+			$size = 0;
+			if ( is_readable( $abs ) ) {
+				try {
+					$size = (int) ( new \SplFileInfo( $abs ) )->getSize();
+				} catch ( \RuntimeException ) {
+					$size = 0;
+				}
+			}
+			$url = wp_get_attachment_url( $id );
 
 			$unreferenced[] = array(
 				'id'   => $id,
 				'file' => $file,
 				'size' => $size,
-				'url'  => wp_get_attachment_url( $id ) ?: '',
+				'url'  => false === $url ? '' : $url,
 			);
 		}
 
