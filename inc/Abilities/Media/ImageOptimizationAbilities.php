@@ -381,22 +381,7 @@ class ImageOptimizationAbilities {
 			);
 		}
 
-		$resolver = __NAMESPACE__ . '\\datamachine_resolve_system_agent_context';
-		if ( ! function_exists( $resolver ) ) {
-			$resolver = 'datamachine_resolve_system_agent_context';
-		}
-		if ( ! is_callable( $resolver ) ) {
-			return array_merge(
-				array(
-					'success'      => false,
-					'queued_count' => 0,
-					'message'      => 'Failed to resolve image optimization scheduling context.',
-					'error'        => 'Task scheduling context is unavailable.',
-				),
-				$scan_coverage
-			);
-		}
-		$acting = call_user_func( $resolver );
+		$acting = \datamachine_resolve_system_agent_context();
 
 		$batch = TaskScheduler::scheduleBatch(
 			'image_optimization',

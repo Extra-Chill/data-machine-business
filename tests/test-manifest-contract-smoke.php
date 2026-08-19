@@ -15,12 +15,14 @@ if ( ! is_array( $manifest ) || 'homeboy/test-manifest/v1' !== ( $manifest['sche
 	exit( 1 );
 }
 
-$smokes = glob( __DIR__ . '/*-smoke.php' );
-sort( $smokes );
-$expected = array_map(
-	static fn( string $path ): string => 'tests/' . basename( $path ),
-	$smokes
-);
+$expected = array();
+$files    = new RecursiveIteratorIterator( new RecursiveDirectoryIterator( __DIR__, FilesystemIterator::SKIP_DOTS ) );
+foreach ( $files as $file ) {
+	if ( $file->isFile() && str_ends_with( $file->getFilename(), '-smoke.php' ) ) {
+		$expected[] = 'tests/' . str_replace( DIRECTORY_SEPARATOR, '/', substr( $file->getPathname(), strlen( __DIR__ ) + 1 ) );
+	}
+}
+sort( $expected );
 $declared = array_keys( $manifest['tests'] );
 sort( $declared );
 

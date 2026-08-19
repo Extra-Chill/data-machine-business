@@ -25,7 +25,9 @@ namespace DataMachineBusiness\Abilities\Media {
 	function absint( $value ): int {
 		return abs( (int) $value );
 	}
+}
 
+namespace {
 	function datamachine_resolve_system_agent_context(): array {
 		return array(
 			'user_id'            => '17',
@@ -33,9 +35,7 @@ namespace DataMachineBusiness\Abilities\Media {
 			'triggering_user_id' => '43',
 		);
 	}
-}
 
-namespace {
 	define( 'ABSPATH', __DIR__ . '/' );
 
 	require_once dirname( __DIR__ ) . '/inc/Abilities/Media/ImageOptimizationAbilities.php';
