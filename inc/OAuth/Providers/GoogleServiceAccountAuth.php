@@ -56,25 +56,6 @@ class GoogleServiceAccountAuth extends BaseServiceAccountProvider {
 		return 'https://oauth2.googleapis.com/token';
 	}
 
-	/**
-	 * Configuration fields for CLI/UI credential entry.
-	 */
-	public function get_config_fields(): array {
-		return array(
-			'service_account_json' => array(
-				'label'       => __( 'Service account JSON', 'data-machine-business' ),
-				'type'        => 'textarea',
-				'required'    => true,
-				'description' => __( 'The full service account key file contents, including client_email and private_key.', 'data-machine-business' ),
-			),
-			'subject'              => array(
-				'label'       => __( 'Delegated subject', 'data-machine-business' ),
-				'type'        => 'text',
-				'required'    => false,
-				'description' => __( 'Optional user to impersonate for domain-wide delegation.', 'data-machine-business' ),
-			),
-		);
-	}
 
 	/**
 	 * Read provider config, falling back to the legacy shared option.
