@@ -259,7 +259,7 @@ wp datamachine cloudflare turnstile update-domains <sitekey> --add=<hostnames> -
 `update-domains` is a dry run unless `--apply` is provided. `--add` and `--remove` accept comma-separated hostnames. See [Cloudflare Turnstile](docs/cloudflare-turnstile.md).
 
 ```bash
-wp datamachine cloudflare turnstile update-domains 0x4AAAAAAAPvQsUv5Z6QBB5n --add=extrachill.link --apply
+wp datamachine cloudflare turnstile update-domains 0x4AAAAAAAExampleSiteKey --add=example.net --apply
 ```
 
 ## REST

@@ -201,20 +201,20 @@ namespace {
 	// --- mixed add+remove preserves untouched domains, lowercases input ----
 	$mixed_widget = array(
 		'sitekey' => 'sk_a',
-		'name'    => 'Extra Chill Network',
+		'name'    => 'Example Network',
 		'mode'    => 'managed',
-		'domains' => array( 'extrachill.com', 'community.extrachill.com', 'old.example.com' ),
+		'domains' => array( 'example.com', 'www.example.com', 'old.example.com' ),
 	);
 	HttpClient::$calls     = array();
 	HttpClient::$responses = array(
 		$fixture( array( 'success' => true, 'errors' => array(), 'result' => $mixed_widget ) ),
 		$fixture( array( 'success' => true, 'errors' => array(), 'result' => array() ) ),
 	);
-	$mixed = CloudflareTurnstileAbilities::update_widget_domains( 'sk_a', array( 'Extrachill.link' ), array( 'old.example.com' ), true );
-	$assert( array( 'extrachill.com', 'community.extrachill.com', 'extrachill.link' ) === $mixed['domains_after'], 'mixed add+remove preserves untouched domains and lowercases the added hostname' );
+	$mixed = CloudflareTurnstileAbilities::update_widget_domains( 'sk_a', array( 'Example.NET' ), array( 'old.example.com' ), true );
+	$assert( array( 'example.com', 'www.example.com', 'example.net' ) === $mixed['domains_after'], 'mixed add+remove preserves untouched domains and lowercases the added hostname' );
 
 	$put_body_mixed = json_decode( HttpClient::$calls[1]['options']['body'], true );
-	$assert( 'Extra Chill Network' === $put_body_mixed['name'] && array( 'extrachill.com', 'community.extrachill.com', 'extrachill.link' ) === $put_body_mixed['domains'], 'PUT body reflects the same preserved name and final domain list reported to the caller' );
+	$assert( 'Example Network' === $put_body_mixed['name'] && array( 'example.com', 'www.example.com', 'example.net' ) === $put_body_mixed['domains'], 'PUT body reflects the same preserved name and final domain list reported to the caller' );
 
 	// --- Cloudflare in-band error (HTTP 200, body success:false) surfaced --
 	HttpClient::$calls     = array();

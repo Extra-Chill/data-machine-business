@@ -68,19 +68,19 @@ Hostnames are validated: no scheme (`https://...`), no path (`/foo`), no wildcar
 
 ```bash
 wp datamachine cloudflare turnstile list-widgets
-wp datamachine cloudflare turnstile get-widget 0x4AAAAAAAPvQsUv5Z6QBB5n
+wp datamachine cloudflare turnstile get-widget 0x4AAAAAAAExampleSiteKey
 
 # Preview adding a hostname (no write)
-wp datamachine cloudflare turnstile update-domains 0x4AAAAAAAPvQsUv5Z6QBB5n --add=extrachill.link
+wp datamachine cloudflare turnstile update-domains 0x4AAAAAAAExampleSiteKey --add=example.net
 
 # Write it
-wp datamachine cloudflare turnstile update-domains 0x4AAAAAAAPvQsUv5Z6QBB5n --add=extrachill.link --apply
+wp datamachine cloudflare turnstile update-domains 0x4AAAAAAAExampleSiteKey --add=example.net --apply
 
 # Remove a stale hostname
-wp datamachine cloudflare turnstile update-domains 0x4AAAAAAAPvQsUv5Z6QBB5n --remove=old.example.com --apply
+wp datamachine cloudflare turnstile update-domains 0x4AAAAAAAExampleSiteKey --remove=old.example.com --apply
 
 # Add and remove in one call
-wp datamachine cloudflare turnstile update-domains 0x4AAAAAAAPvQsUv5Z6QBB5n --add=new.example.com --remove=old.example.com --apply
+wp datamachine cloudflare turnstile update-domains 0x4AAAAAAAExampleSiteKey --add=new.example.com --remove=old.example.com --apply
 ```
 
 ## Response Shape
@@ -111,12 +111,12 @@ array(
     'success'        => true,
     'dry_run'        => true,
     'no_op'          => false,
-    'sitekey'        => '0x4AAAAAAAPvQsUv5Z6QBB5n',
-    'name'           => 'Extra Chill Network',
+    'sitekey'        => '0x4AAAAAAAExampleSiteKey',
+    'name'           => 'Example Network',
     'mode'           => 'managed',
-    'domains_before' => array( 'extrachill.com', 'community.extrachill.com' ),
-    'domains_after'  => array( 'extrachill.com', 'community.extrachill.com', 'extrachill.link' ),
-    'added'          => array( 'extrachill.link' ),
+    'domains_before' => array( 'example.com', 'www.example.com' ),
+    'domains_after'  => array( 'example.com', 'www.example.com', 'example.net' ),
+    'added'          => array( 'example.net' ),
     'removed'        => array(),
     'message'        => 'Dry run — no changes written. Pass apply=true (or --apply) to write these changes to Cloudflare.',
 )

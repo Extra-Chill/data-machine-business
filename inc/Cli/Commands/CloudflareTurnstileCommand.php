@@ -78,7 +78,7 @@ class CloudflareTurnstileCommand extends BaseCommand {
 	 *
 	 * ## EXAMPLES
 	 *
-	 *     wp datamachine cloudflare turnstile get-widget 0x4AAAAAAAPvQsUv5Z6QBB5n
+	 *     wp datamachine cloudflare turnstile get-widget 0x4AAAAAAAExampleSiteKey
 	 *
 	 * @subcommand get-widget
 	 * @when after_wp_load
@@ -141,14 +141,14 @@ class CloudflareTurnstileCommand extends BaseCommand {
 	 *
 	 * ## EXAMPLES
 	 *
-	 *     # Preview adding extrachill.link
-	 *     wp datamachine cloudflare turnstile update-domains 0x4AAAAAAAPvQsUv5Z6QBB5n --add=extrachill.link
+	 *     # Preview adding example.net
+	 *     wp datamachine cloudflare turnstile update-domains 0x4AAAAAAAExampleSiteKey --add=example.net
 	 *
 	 *     # Actually apply it
-	 *     wp datamachine cloudflare turnstile update-domains 0x4AAAAAAAPvQsUv5Z6QBB5n --add=extrachill.link --apply
+	 *     wp datamachine cloudflare turnstile update-domains 0x4AAAAAAAExampleSiteKey --add=example.net --apply
 	 *
 	 *     # Remove a stale hostname
-	 *     wp datamachine cloudflare turnstile update-domains 0x4AAAAAAAPvQsUv5Z6QBB5n --remove=old.example.com --apply
+	 *     wp datamachine cloudflare turnstile update-domains 0x4AAAAAAAExampleSiteKey --remove=old.example.com --apply
 	 *
 	 * @subcommand update-domains
 	 * @when after_wp_load
