@@ -26,6 +26,7 @@
     "tests/sendy-campaign-abilities-smoke.php": { "environment": "standalone-php" },
     "tests/sendy-canonical-config-smoke.php": { "environment": "standalone-php" },
     "tests/sendy-list-campaigns-schema-smoke.php": { "environment": "wordpress" },
-    "tests/sendy-real-schema-columns-smoke.php": { "environment": "standalone-php" }
+    "tests/sendy-real-schema-columns-smoke.php": { "environment": "standalone-php" },
+    "tests/sendy-send-campaign-smoke.php": { "environment": "standalone-php" }
   }
 }

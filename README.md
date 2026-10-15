@@ -31,7 +31,7 @@ Data Machine Business connects WordPress automation, agents, and pipelines to an
 | Slack | Fetch channel messages and publish messages or thread replies | Abilities, fetch/publish handlers |
 | Discord | Fetch channel messages and publish text or embeds | Abilities, fetch/publish handlers |
 | Amazon Associates | Search products and generate Creators API affiliate links | AI tool |
-| Sendy | Subscribe users, create or update campaigns, and read email-funnel metrics | Abilities |
+| Sendy | Subscribe users, create or update campaigns, send or schedule campaigns to lists, and read email-funnel metrics | Abilities |
 | Mediavine | Fetch page, aggregate, device, country, normalized-source, and ad-unit publisher revenue reports | Ability, WP-CLI |
 | Content analytics | Category-level engagement audits, editorial triage flags, and GSC opportunity ranking | Abilities |
 | Media hygiene | Detect and safely remove orphan files and unreferenced attachments | Ability, WP-CLI |
@@ -76,6 +76,7 @@ The plugin registers the following WordPress abilities. Management-oriented abil
 | `datamachine/fetch-messages-discord` | Fetch Discord channel history with before/after pagination |
 | `datamachine/sendy-subscribe` | Subscribe an email address to a Sendy list; intentionally supports public callers |
 | `datamachine/sendy-push-campaign` | Create or update a Sendy campaign |
+| `datamachine/sendy-send-campaign` | Create a Sendy campaign and send it now or schedule it to lists/segments (destructive) |
 | `datamachine/sendy-list-campaigns` | List Sendy campaigns with status and engagement summaries |
 | `datamachine/sendy-get-campaign` | Get one Sendy campaign |
 | `datamachine/sendy-delete-campaign` | Delete a draft Sendy campaign |
@@ -340,7 +341,7 @@ Join Amazon Associates, create Amazon Creators API credentials, and configure th
 
 ### Sendy
 
-Campaign abilities resolve credentials from the DMB-owned `datamachine_sendy_config` network option or `datamachine_sendy_config` filter. Configure `api_key` and `sendy_url` for campaign create/update, plus a `db` array containing `host`, `user`, `pass`, `name`, and optional `port` for list/get/delete. List and get need read access; delete also needs permission to delete draft rows. Credentials are never accepted or returned by the campaign abilities; consumers supply only campaign content, sender identity, IDs, and filters. Consumer-specific list and brand IDs remain consumer policy.
+Campaign abilities resolve credentials from the DMB-owned `datamachine_sendy_config` network option or `datamachine_sendy_config` filter. Configure `api_key` and `sendy_url` for campaign create/update, plus a `db` array containing `host`, `user`, `pass`, `name`, and optional `port` for list/get/delete. List and get need read access; delete also needs permission to delete draft rows. `sendy-send-campaign` uses the same API configuration. Sendy's API cannot send an existing draft, so it always creates a new campaign via `create.php` with `send_campaign=1`; it requires at least one `list_ids` or `segment_ids` entry, accepts `exclude_list_ids`/`exclude_segment_ids`, and takes an optional `schedule_date_time` (`Y-m-d H:i`, minutes in multiples of 5) with a required IANA `schedule_timezone`. It is annotated destructive and non-idempotent; duplicate-send guards are consumer policy. Credentials are never accepted or returned by the campaign abilities; consumers supply only campaign content, sender identity, IDs, and filters. Consumer-specific list and brand IDs remain consumer policy.
 
 `datamachine_sendy_config` is the single source of truth for Sendy credentials. Every Sendy ability, including `sendy-subscribe` and `sendy-metrics`, resolves it internally; no ability accepts a `config` input, and a supplied one is ignored. Like the other DMB integrations, the connection is set with the network option (or the `datamachine_sendy_config` filter), e.g. `wp site option patch insert datamachine_sendy_config api_key <key>`.
 
