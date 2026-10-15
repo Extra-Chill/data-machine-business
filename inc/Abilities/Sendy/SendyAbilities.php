@@ -2,12 +2,13 @@
 /**
  * Sendy Abilities
  *
- * Generic, config-driven abilities for the Sendy email-marketing service —
- * a sibling to the Slack, Discord, and Google integrations in this plugin.
+ * Generic abilities for the Sendy email-marketing service — a sibling to the
+ * Slack, Discord, and Google integrations in this plugin.
  *
- * Campaign abilities resolve connection configuration inside this plugin so
- * credentials never cross the public ability boundary. Consumers continue to
- * own campaign content and sender identity. The mechanics live in
+ * Every Sendy ability resolves its connection from one place: the
+ * `datamachine_sendy_config` network option (filterable via
+ * `datamachine_sendy_config`). Credentials never cross the public ability
+ * boundary; consumers own only content, sender identity, and list IDs. The mechanics live in
  * {@see \DataMachineBusiness\Sendy\SendyClient}.
  *
  * Abilities:
@@ -31,7 +32,7 @@ use DataMachineBusiness\Sendy\SendyClient;
 defined( 'ABSPATH' ) || exit;
 
 /**
- * Registers the generic, config-driven Sendy abilities.
+ * Registers the generic Sendy abilities.
  */
 class SendyAbilities {
 
@@ -60,40 +61,6 @@ class SendyAbilities {
 		\DataMachine\Abilities\AbilityRegistration::on_abilities_api_init( array( $this, 'register_abilities' ) );
 
 		self::$registered = true;
-	}
-
-	/**
-	 * The reusable config input-schema fragment shared by every Sendy ability.
-	 *
-	 * @return array
-	 */
-	private function config_schema(): array {
-		return array(
-			'type'        => 'object',
-			'description' => __( 'Optional legacy Sendy connection override. Omit it to use the canonical datamachine_sendy_config network option.', 'data-machine-business' ),
-			'properties'  => array(
-				'api_key'   => array(
-					'type'        => 'string',
-					'description' => __( 'Sendy API key.', 'data-machine-business' ),
-				),
-				'sendy_url' => array(
-					'type'        => 'string',
-					'description' => __( 'Sendy installation URL.', 'data-machine-business' ),
-				),
-				'db'        => array(
-					'type'        => 'object',
-					'description' => __( 'Optional read-only Sendy database connection (host, user, pass, name, port). Required only for the DB-backed metric reads.', 'data-machine-business' ),
-					'properties'  => array(
-						'host' => array( 'type' => 'string' ),
-						'user' => array( 'type' => 'string' ),
-						'pass' => array( 'type' => 'string' ),
-						'name' => array( 'type' => 'string' ),
-						'port' => array( 'type' => 'string' ),
-					),
-				),
-			),
-			'required'    => array( 'api_key', 'sendy_url' ),
-		);
 	}
 
 	/**
@@ -202,7 +169,6 @@ class SendyAbilities {
 					'type'       => 'object',
 					'required'   => array( 'list_id', 'email' ),
 					'properties' => array(
-						'config'  => $this->config_schema(),
 						'list_id' => array(
 							'type'        => 'string',
 							'description' => __( 'Sendy list ID (encrypted hash).', 'data-machine-business' ),
@@ -390,7 +356,6 @@ class SendyAbilities {
 				'input_schema'        => array(
 					'type'       => 'object',
 					'properties' => array(
-						'config'         => $this->config_schema(),
 						'metric'         => array(
 							'type'        => 'string',
 							'enum'        => array( 'funnel', 'subscribers', 'campaigns' ),
@@ -450,35 +415,7 @@ class SendyAbilities {
 	}
 
 	/**
-	 * Build a client for subscribe/metrics.
-	 *
-	 * Uses the canonical DMB configuration unless the caller still passes the
-	 * legacy `config` override, which keeps older consumers working while they
-	 * migrate to the single source of truth.
-	 *
-	 * @param array  $input       Ability input.
-	 * @param string $requirement Required connection when using canonical config: api, db, or any.
-	 * @return SendyClient|\WP_Error
-	 */
-	private function client_from_input( array $input, string $requirement = 'api' ) {
-		$config = isset( $input['config'] ) && is_array( $input['config'] ) ? $input['config'] : array();
-
-		if ( empty( $config ) ) {
-			return $this->campaign_client( $requirement );
-		}
-
-		if ( empty( $config['api_key'] ) || empty( $config['sendy_url'] ) ) {
-			return new \WP_Error(
-				'sendy_config_incomplete',
-				__( 'A Sendy config with api_key and sendy_url is required.', 'data-machine-business' )
-			);
-		}
-
-		return new SendyClient( $config );
-	}
-
-	/**
-	 * Resolve the DMB-owned Sendy configuration for campaign operations.
+	 * Resolve the canonical Sendy configuration used by every Sendy ability.
 	 *
 	 * Deployments may provide secrets through the filter instead of persisting
 	 * them in the network option. The filter remains owned by this integration;
@@ -496,51 +433,6 @@ class SendyAbilities {
 		 * @param array $config Keys: api_key, sendy_url, and optional db.
 		 */
 		return apply_filters( 'datamachine_sendy_config', $config );
-	}
-
-	/**
-	 * Store the Sendy API connection in the canonical network option.
-	 *
-	 * Merges into the existing option so database credentials and any other
-	 * keys are preserved. Consumers with their own settings screens (for
-	 * example a newsletter plugin) call this instead of keeping a second copy
-	 * of the API key.
-	 *
-	 * @param string $api_key   Sendy API key.
-	 * @param string $sendy_url Sendy installation URL.
-	 * @return true|\WP_Error
-	 */
-	public static function update_api_config( string $api_key, string $sendy_url ) {
-		$api_key   = trim( $api_key );
-		$sendy_url = rtrim( trim( $sendy_url ), '/' );
-
-		if ( '' === $api_key || '' === $sendy_url ) {
-			return new \WP_Error( 'sendy_config_incomplete', __( 'Both a Sendy API key and URL are required.', 'data-machine-business' ) );
-		}
-
-		if ( ! wp_http_validate_url( $sendy_url ) ) {
-			return new \WP_Error( 'sendy_config_invalid', __( 'The Sendy URL is invalid.', 'data-machine-business' ) );
-		}
-
-		$config = get_site_option( self::CONFIG_OPTION, array() );
-		$config = is_array( $config ) ? $config : array();
-
-		$config['api_key']   = $api_key;
-		$config['sendy_url'] = $sendy_url;
-
-		update_site_option( self::CONFIG_OPTION, $config );
-
-		return true;
-	}
-
-	/**
-	 * Whether the canonical config has a usable API connection.
-	 *
-	 * @return bool
-	 */
-	public static function has_api_config(): bool {
-		$config = self::get_campaign_config();
-		return ! empty( $config['api_key'] ) && ! empty( $config['sendy_url'] );
 	}
 
 	/**
@@ -594,7 +486,7 @@ class SendyAbilities {
 	 * @return array|\WP_Error
 	 */
 	public function execute_subscribe( array $input ) {
-		$client = $this->client_from_input( $input, 'api' );
+		$client = $this->campaign_client( 'api' );
 		if ( is_wp_error( $client ) ) {
 			return $client;
 		}
@@ -752,7 +644,7 @@ class SendyAbilities {
 			$requirement = 'db';
 		}
 
-		$client = $this->client_from_input( $input, $requirement );
+		$client = $this->campaign_client( $requirement );
 		if ( is_wp_error( $client ) ) {
 			return $client;
 		}

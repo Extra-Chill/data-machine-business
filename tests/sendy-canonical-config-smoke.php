@@ -2,9 +2,8 @@
 /**
  * Smoke coverage for the single canonical Sendy configuration.
  *
- * Subscribe and metrics resolve datamachine_sendy_config when the caller omits
- * the legacy `config` override, and update_api_config() writes the API
- * connection without dropping database credentials.
+ * Every Sendy ability, including subscribe and metrics, resolves
+ * datamachine_sendy_config. Callers cannot supply or override credentials.
  *
  * Run with: php tests/sendy-canonical-config-smoke.php
  */
@@ -147,15 +146,17 @@ namespace {
 
 	$abilities = new SendyAbilities();
 
-	// ── Schemas no longer require caller credentials ──
-	assert_config( ! in_array( 'config', $registered['datamachine/sendy-subscribe']['input_schema']['required'], true ), 'subscribe does not require config' );
-	assert_config( ! in_array( 'config', $registered['datamachine/sendy-metrics']['input_schema']['required'] ?? array(), true ), 'metrics does not require config' );
+	// ── No caller credentials anywhere ──
+	foreach ( $registered as $name => $definition ) {
+		assert_config( ! isset( $definition['input_schema']['properties']['config'] ), "{$name} accepts no credentials" );
+		assert_config( ! in_array( 'config', $definition['input_schema']['required'] ?? array(), true ), "{$name} requires no credentials" );
+	}
+	assert_config( ! method_exists( SendyAbilities::class, 'update_api_config' ), 'no consumer-facing credential writer exists' );
 
 	// ── No canonical config: explicit errors ──
 	$absent = $abilities->execute_subscribe( array( 'list_id' => 'L1', 'email' => 'fan@example.com' ) );
-	assert_config( is_wp_error( $absent ) && 'sendy_provider_unavailable' === $absent->get_error_code(), 'subscribe without any config is explicit' );
+	assert_config( is_wp_error( $absent ) && 'sendy_provider_unavailable' === $absent->get_error_code(), 'subscribe without config is explicit' );
 	assert_config( false !== strpos( $absent->get_error_message(), 'datamachine_sendy_config' ), 'error names the option to set' );
-	assert_config( ! SendyAbilities::has_api_config(), 'has_api_config is false when empty' );
 
 	// ── DB-only canonical config (the production state that broke push) ──
 	$site_options[ SendyAbilities::CONFIG_OPTION ] = array(
@@ -168,46 +169,37 @@ namespace {
 	assert_config( is_wp_error( $api_metrics ) && 'sendy_config_incomplete' === $api_metrics->get_error_code(), 'api-sourced metrics need API fields' );
 	assert_config( array() === $http_calls, 'incomplete config makes no HTTP calls' );
 
-	// ── update_api_config ──
-	$bad_url = SendyAbilities::update_api_config( 'key', 'not a url' );
-	assert_config( is_wp_error( $bad_url ) && 'sendy_config_invalid' === $bad_url->get_error_code(), 'invalid URL is rejected' );
-	$empty = SendyAbilities::update_api_config( '', 'https://mail.example.test' );
-	assert_config( is_wp_error( $empty ) && 'sendy_config_incomplete' === $empty->get_error_code(), 'empty key is rejected' );
-	assert_config( ! isset( $site_options[ SendyAbilities::CONFIG_OPTION ]['api_key'] ), 'rejected updates write nothing' );
-
-	$saved  = SendyAbilities::update_api_config( ' canonical-secret ', 'https://mail.example.test/ ' );
-	$stored = $site_options[ SendyAbilities::CONFIG_OPTION ];
-	assert_config( true === $saved, 'valid API config saves' );
-	assert_config( 'canonical-secret' === $stored['api_key'] && 'https://mail.example.test' === $stored['sendy_url'], 'API config is trimmed and unslashed' );
-	assert_config( 'db-secret' === $stored['db']['pass'], 'database credentials are preserved' );
-	assert_config( SendyAbilities::has_api_config(), 'has_api_config is true after saving' );
+	// ── A caller-supplied config is ignored, never used ──
+	$smuggled = $abilities->execute_subscribe(
+		array(
+			'config'  => array( 'api_key' => 'caller-secret', 'sendy_url' => 'https://attacker.example.test' ),
+			'list_id' => 'L1',
+			'email'   => 'fan@example.com',
+		)
+	);
+	assert_config( is_wp_error( $smuggled ) && array() === $http_calls, 'a caller config cannot supply missing credentials or redirect requests' );
 
 	// ── Canonical config drives subscribe and metrics ──
-	$subscribed = $abilities->execute_subscribe( array( 'list_id' => 'L1', 'email' => 'fan@example.com' ) );
+	$site_options[ SendyAbilities::CONFIG_OPTION ]['api_key']   = 'canonical-secret';
+	$site_options[ SendyAbilities::CONFIG_OPTION ]['sendy_url'] = 'https://mail.example.test';
+
+	$subscribed = $abilities->execute_subscribe(
+		array(
+			'config'  => array( 'api_key' => 'caller-secret', 'sendy_url' => 'https://attacker.example.test' ),
+			'list_id' => 'L1',
+			'email'   => 'fan@example.com',
+		)
+	);
 	$call       = end( $http_calls );
 	assert_config( ! is_wp_error( $subscribed ), 'subscribe succeeds with canonical config' );
-	assert_config( 'https://mail.example.test/subscribe' === $call['url'] && 'canonical-secret' === $call['body']['api_key'], 'subscribe uses the canonical URL and key' );
+	assert_config( 'https://mail.example.test/subscribe' === $call['url'] && 'canonical-secret' === $call['body']['api_key'], 'subscribe always uses the canonical URL and key' );
 
 	$http_calls = array();
 	$stats      = $abilities->execute_metrics( array( 'metric' => 'subscribers', 'source' => 'api' ) );
 	assert_config( ! is_wp_error( $stats ) && 42 === ( $stats['total_active'] ?? null ), 'metrics resolve canonical config' );
 	assert_config( 0 === strpos( $http_calls[0]['url'], 'https://mail.example.test/' ), 'metrics hit the canonical URL' );
 
-	// ── Legacy override still works for unmigrated callers ──
-	$abilities->execute_subscribe(
-		array(
-			'config'  => array( 'api_key' => 'legacy-secret', 'sendy_url' => 'https://legacy.example.test' ),
-			'list_id' => 'L1',
-			'email'   => 'fan@example.com',
-		)
-	);
-	$call = end( $http_calls );
-	assert_config( 'https://legacy.example.test/subscribe' === $call['url'] && 'legacy-secret' === $call['body']['api_key'], 'an explicit config override is honored' );
-
-	$partial = $abilities->execute_subscribe( array( 'config' => array( 'api_key' => 'x' ), 'list_id' => 'L1', 'email' => 'fan@example.com' ) );
-	assert_config( is_wp_error( $partial ) && 'sendy_config_incomplete' === $partial->get_error_code(), 'an incomplete override is still rejected' );
-
-	foreach ( array( $absent, $db_only, $api_metrics, $stats ) as $result ) {
+	foreach ( array( $absent, $db_only, $api_metrics, $smuggled, $stats ) as $result ) {
 		if ( is_wp_error( $result ) ) {
 			$result = array( $result->get_error_code(), $result->get_error_message() );
 		}
