@@ -454,8 +454,8 @@ class SendyClient {
 	 * Create a Sendy campaign and send or schedule it to lists/segments.
 	 *
 	 * Sendy's API cannot send an existing draft: sending always creates a new
-	 * campaign through `/api/campaigns/create.php` with `send_campaign=1`. This
-	 * method therefore never touches `update.php` or `status.php`.
+	 * campaign through `/api/campaigns/create.php` with `send_campaign=1`, the
+	 * only campaign endpoint stock Sendy provides.
 	 *
 	 * Campaign keys: from_name, from_email, reply_to, subject, html_text,
 	 * plain_text, brand_id, title (strings); list_ids, segment_ids,
