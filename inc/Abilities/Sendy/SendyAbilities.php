@@ -14,6 +14,7 @@
  * Abilities:
  *  - datamachine/sendy-subscribe       Subscribe an email to a list (API).
  *  - datamachine/sendy-push-campaign   Create/update a campaign (API).
+ *  - datamachine/sendy-send-campaign   Create and send/schedule a campaign to lists (API).
  *  - datamachine/sendy-list-campaigns  List campaigns (read-only DB).
  *  - datamachine/sendy-get-campaign    Get a campaign (read-only DB).
  *  - datamachine/sendy-delete-campaign Delete a draft campaign (DB).
@@ -232,6 +233,73 @@ class SendyAbilities {
 				'execute_callback'    => array( $this, 'execute_push_campaign' ),
 				'permission_callback' => array( $this, 'check_permission' ),
 				'meta'                => array( 'show_in_rest' => false ),
+			)
+		);
+
+		// ── Send Campaign ──
+		$id_list = array(
+			'type'  => 'array',
+			'items' => array(
+				'type'      => 'string',
+				'minLength' => 1,
+			),
+		);
+		wp_register_ability(
+			'datamachine/sendy-send-campaign',
+			array(
+				'label'               => __( 'Sendy: Send Campaign', 'data-machine-business' ),
+				'description'         => __( 'Create a Sendy campaign and send it now, or schedule it, to the given lists or segments. Sendy cannot send an existing draft, so every call creates a new campaign. The caller owns the content, sender identity and targeting.', 'data-machine-business' ),
+				'category'            => 'datamachine-publishing',
+				'input_schema'        => array(
+					'type'                 => 'object',
+					'required'             => array( 'from_name', 'from_email', 'reply_to', 'subject', 'html_text', 'brand_id' ),
+					'properties'           => array(
+						'from_name'           => array( 'type' => 'string' ),
+						'from_email'          => array( 'type' => 'string' ),
+						'reply_to'            => array( 'type' => 'string' ),
+						'subject'             => array( 'type' => 'string' ),
+						'html_text'           => array( 'type' => 'string' ),
+						'plain_text'          => array( 'type' => 'string' ),
+						'brand_id'            => array( 'type' => 'string' ),
+						'title'               => array(
+							'type'        => 'string',
+							'description' => __( 'Optional internal campaign title shown in Sendy. Defaults to the subject.', 'data-machine-business' ),
+						),
+						'list_ids'            => $id_list + array( 'description' => __( 'Sendy list IDs (encrypted hashes) to send to. At least one list or segment ID is required.', 'data-machine-business' ) ),
+						'segment_ids'         => $id_list + array( 'description' => __( 'Sendy segment IDs to send to.', 'data-machine-business' ) ),
+						'exclude_list_ids'    => $id_list + array( 'description' => __( 'Sendy list IDs whose subscribers are excluded.', 'data-machine-business' ) ),
+						'exclude_segment_ids' => $id_list + array( 'description' => __( 'Sendy segment IDs whose subscribers are excluded.', 'data-machine-business' ) ),
+						'schedule_date_time'  => array(
+							'type'        => 'string',
+							'description' => __( 'Optional send time as "Y-m-d H:i" (24-hour, minutes in multiples of 5). Omit to send now.', 'data-machine-business' ),
+						),
+						'schedule_timezone'   => array(
+							'type'        => 'string',
+							'description' => __( 'IANA timezone for schedule_date_time, e.g. America/New_York. Required when scheduling.', 'data-machine-business' ),
+						),
+					),
+					'additionalProperties' => false,
+				),
+				'output_schema'       => array(
+					'type'       => 'object',
+					'required'   => array( 'success', 'campaign_id', 'message', 'scheduled' ),
+					'properties' => array(
+						'success'     => array( 'type' => 'boolean' ),
+						'campaign_id' => array( 'type' => array( 'string', 'null' ) ),
+						'message'     => array( 'type' => 'string' ),
+						'scheduled'   => array( 'type' => 'boolean' ),
+					),
+				),
+				'execute_callback'    => array( $this, 'execute_send_campaign' ),
+				'permission_callback' => array( $this, 'check_permission' ),
+				'meta'                => array(
+					'show_in_rest' => false,
+					'annotations'  => array(
+						'readonly'    => false,
+						'idempotent'  => false,
+						'destructive' => true,
+					),
+				),
 			)
 		);
 
@@ -565,6 +633,146 @@ class SendyAbilities {
 		// Raw provider responses are internal diagnostics and may contain secrets.
 		unset( $result['raw'] );
 		return $result;
+	}
+
+	/**
+	 * Execute datamachine/sendy-send-campaign.
+	 *
+	 * Validates content, sender identity, targeting and schedule before any
+	 * HTTP call, then delegates to SendyClient::send_campaign().
+	 *
+	 * @param array $input Ability input.
+	 * @return array|\WP_Error
+	 */
+	public function execute_send_campaign( array $input ) {
+		$client = $this->campaign_client( 'api' );
+		if ( is_wp_error( $client ) ) {
+			return $client;
+		}
+
+		$required = array( 'from_name', 'from_email', 'reply_to', 'subject', 'html_text', 'brand_id' );
+		foreach ( $required as $field ) {
+			if ( ! isset( $input[ $field ] ) || '' === trim( (string) $input[ $field ] ) ) {
+				/* translators: %s: Sendy campaign input field name. */
+				$message = sprintf( __( '%s is required.', 'data-machine-business' ), $field );
+				return new \WP_Error( 'sendy_validation_error', $message );
+			}
+		}
+
+		if ( ! is_email( (string) $input['from_email'] ) || ! is_email( (string) $input['reply_to'] ) ) {
+			return new \WP_Error(
+				'sendy_validation_error',
+				__( 'from_email and reply_to must be valid email addresses.', 'data-machine-business' )
+			);
+		}
+
+		$targets = array();
+		foreach ( array( 'list_ids', 'segment_ids', 'exclude_list_ids', 'exclude_segment_ids' ) as $field ) {
+			$value = isset( $input[ $field ] ) ? $input[ $field ] : array();
+			if ( ! is_array( $value ) ) {
+				/* translators: %s: Sendy targeting field name. */
+				return new \WP_Error( 'sendy_validation_error', sprintf( __( '%s must be an array of IDs.', 'data-machine-business' ), $field ) );
+			}
+			$clean = array();
+			foreach ( $value as $id ) {
+				$id = trim( (string) $id );
+				// Sendy IDs are encrypted hashes (list/segment) or digits; never commas.
+				if ( '' === $id || ! preg_match( '/^[A-Za-z0-9]+$/', $id ) ) {
+					/* translators: %s: Sendy targeting field name. */
+					return new \WP_Error( 'sendy_validation_error', sprintf( __( '%s contains an invalid ID.', 'data-machine-business' ), $field ) );
+				}
+				$clean[] = $id;
+			}
+			$targets[ $field ] = array_values( array_unique( $clean ) );
+		}
+
+		if ( empty( $targets['list_ids'] ) && empty( $targets['segment_ids'] ) ) {
+			return new \WP_Error(
+				'sendy_validation_error',
+				__( 'At least one list_ids or segment_ids entry is required to send a campaign.', 'data-machine-business' )
+			);
+		}
+
+		if ( array_intersect( $targets['list_ids'], $targets['exclude_list_ids'] ) ) {
+			return new \WP_Error(
+				'sendy_validation_error',
+				__( 'A list cannot be both targeted and excluded.', 'data-machine-business' )
+			);
+		}
+
+		$schedule = $this->sendy_schedule( $input );
+		if ( is_wp_error( $schedule ) ) {
+			return $schedule;
+		}
+
+		$result = $client->send_campaign(
+			array_merge(
+				array(
+					'from_name'  => (string) $input['from_name'],
+					'from_email' => (string) $input['from_email'],
+					'reply_to'   => (string) $input['reply_to'],
+					'subject'    => (string) $input['subject'],
+					'html_text'  => (string) $input['html_text'],
+					'plain_text' => isset( $input['plain_text'] ) ? (string) $input['plain_text'] : '',
+					'brand_id'   => (string) $input['brand_id'],
+					'title'      => isset( $input['title'] ) ? (string) $input['title'] : '',
+				),
+				$targets,
+				$schedule
+			)
+		);
+
+		if ( is_wp_error( $result ) ) {
+			return $result;
+		}
+
+		// Raw provider responses are internal diagnostics and may contain secrets.
+		unset( $result['raw'] );
+		return $result;
+	}
+
+	/**
+	 * Validate and convert an optional schedule into Sendy's parameters.
+	 *
+	 * Sendy expects `schedule_date_time` like "June 15, 2021 6:05pm" with the
+	 * minute in multiples of 5, plus `schedule_timezone`.
+	 *
+	 * @param array $input Ability input.
+	 * @return array|\WP_Error Empty array when not scheduling.
+	 */
+	private function sendy_schedule( array $input ) {
+		$when = isset( $input['schedule_date_time'] ) ? trim( (string) $input['schedule_date_time'] ) : '';
+		$tz   = isset( $input['schedule_timezone'] ) ? trim( (string) $input['schedule_timezone'] ) : '';
+
+		if ( '' === $when ) {
+			if ( '' !== $tz ) {
+				return new \WP_Error( 'sendy_validation_error', __( 'schedule_timezone requires schedule_date_time.', 'data-machine-business' ) );
+			}
+			return array();
+		}
+
+		if ( '' === $tz || ! in_array( $tz, timezone_identifiers_list(), true ) ) {
+			return new \WP_Error( 'sendy_validation_error', __( 'schedule_timezone must be a valid IANA timezone when scheduling.', 'data-machine-business' ) );
+		}
+
+		$zone = new \DateTimeZone( $tz );
+		$date = \DateTimeImmutable::createFromFormat( '!Y-m-d H:i', $when, $zone );
+		if ( ! $date || $date->format( 'Y-m-d H:i' ) !== $when ) {
+			return new \WP_Error( 'sendy_validation_error', __( 'schedule_date_time must use the "Y-m-d H:i" format.', 'data-machine-business' ) );
+		}
+
+		if ( 0 !== ( (int) $date->format( 'i' ) ) % 5 ) {
+			return new \WP_Error( 'sendy_validation_error', __( 'schedule_date_time minutes must be a multiple of 5.', 'data-machine-business' ) );
+		}
+
+		if ( $date <= new \DateTimeImmutable( 'now', $zone ) ) {
+			return new \WP_Error( 'sendy_validation_error', __( 'schedule_date_time must be in the future.', 'data-machine-business' ) );
+		}
+
+		return array(
+			'schedule_date_time' => $date->format( 'F j, Y g:ia' ),
+			'schedule_timezone'  => $tz,
+		);
 	}
 
 	/**

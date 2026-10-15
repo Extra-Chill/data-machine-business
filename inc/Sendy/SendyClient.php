@@ -450,6 +450,152 @@ class SendyClient {
 		return $id ? (string) $id : null;
 	}
 
+	/**
+	 * Create a Sendy campaign and send or schedule it to lists/segments.
+	 *
+	 * Sendy's API cannot send an existing draft: sending always creates a new
+	 * campaign through `/api/campaigns/create.php` with `send_campaign=1`. This
+	 * method therefore never touches `update.php` or `status.php`.
+	 *
+	 * Campaign keys: from_name, from_email, reply_to, subject, html_text,
+	 * plain_text, brand_id, title (strings); list_ids, segment_ids,
+	 * exclude_list_ids, exclude_segment_ids (string arrays); schedule_date_time
+	 * (already in Sendy's `F j, Y g:ia` format) and schedule_timezone (strings).
+	 * Callers are expected to validate targeting before calling.
+	 *
+	 * @param array $campaign Campaign content, sender identity and targeting.
+	 * @return array|\WP_Error Result keyed by success (bool), campaign_id
+	 *                         (null; Sendy does not return one for sends),
+	 *                         message (string), scheduled (bool), raw (string);
+	 *                         or a WP_Error.
+	 */
+	public function send_campaign( array $campaign ) {
+		if ( ! $this->has_api_config() ) {
+			return new \WP_Error( 'sendy_config_incomplete', 'Sendy API key or URL not configured.' );
+		}
+
+		$string = static function ( string $key ) use ( $campaign ): string {
+			return isset( $campaign[ $key ] ) ? (string) $campaign[ $key ] : '';
+		};
+		$ids    = static function ( string $key ) use ( $campaign ): string {
+			$values = isset( $campaign[ $key ] ) && is_array( $campaign[ $key ] ) ? $campaign[ $key ] : array();
+			$values = array_values( array_unique( array_filter( array_map( 'trim', array_map( 'strval', $values ) ), 'strlen' ) ) );
+			return implode( ',', $values );
+		};
+
+		$body = array(
+			'api_key'       => $this->api_key,
+			'from_name'     => $string( 'from_name' ),
+			'from_email'    => $string( 'from_email' ),
+			'reply_to'      => $string( 'reply_to' ),
+			'subject'       => $string( 'subject' ),
+			'plain_text'    => $string( 'plain_text' ),
+			'html_text'     => $string( 'html_text' ),
+			'brand_id'      => $string( 'brand_id' ),
+			'send_campaign' => 1,
+		);
+
+		$optional = array(
+			'title'                => $string( 'title' ),
+			'list_ids'             => $ids( 'list_ids' ),
+			'segment_ids'          => $ids( 'segment_ids' ),
+			'exclude_list_ids'     => $ids( 'exclude_list_ids' ),
+			// Sendy's parameter name is `exclude_segments_ids` (plural "segments").
+			'exclude_segments_ids' => $ids( 'exclude_segment_ids' ),
+			'schedule_date_time'   => $string( 'schedule_date_time' ),
+			'schedule_timezone'    => $string( 'schedule_timezone' ),
+		);
+		foreach ( $optional as $key => $value ) {
+			if ( '' !== $value ) {
+				$body[ $key ] = $value;
+			}
+		}
+
+		if ( empty( $body['list_ids'] ) && empty( $body['segment_ids'] ) ) {
+			return new \WP_Error( 'sendy_validation_error', 'At least one list or segment ID is required to send a campaign.' );
+		}
+
+		$response = wp_remote_post(
+			$this->sendy_url . '/api/campaigns/create.php',
+			array(
+				'headers' => array( 'Content-Type' => 'application/x-www-form-urlencoded' ),
+				'body'    => $body,
+				'timeout' => 60,
+			)
+		);
+
+		if ( is_wp_error( $response ) ) {
+			return $this->normalize_transport_error( $response );
+		}
+
+		$status_code = wp_remote_retrieve_response_code( $response );
+		if ( $status_code < 200 || $status_code >= 300 ) {
+			return new \WP_Error(
+				'sendy_remote_error',
+				'Sendy returned an unsuccessful campaign response.',
+				array( 'status' => $status_code )
+			);
+		}
+
+		$raw = trim( (string) wp_remote_retrieve_body( $response ) );
+
+		if ( 'Campaign created and now sending' === $raw ) {
+			$scheduled = false;
+		} elseif ( 'Campaign scheduled' === $raw ) {
+			$scheduled = true;
+		} else {
+			// Sendy reports failures as plain-text sentences (e.g. "One or more
+			// list IDs are invalid"). Surface a bounded, known-safe message only.
+			return new \WP_Error(
+				'sendy_send_rejected',
+				'Sendy rejected the send request: ' . self::safe_sendy_message( $raw )
+			);
+		}
+
+		return array(
+			'success'     => true,
+			'campaign_id' => null,
+			'message'     => $raw,
+			'scheduled'   => $scheduled,
+			'raw'         => $raw,
+		);
+	}
+
+	/**
+	 * Map a Sendy create-campaign response to a message safe to return.
+	 *
+	 * Only Sendy's documented plain-text error sentences pass through; anything
+	 * else (HTML error pages, stack traces, echoed input) is replaced.
+	 *
+	 * @param string $raw Raw response body.
+	 * @return string
+	 */
+	private static function safe_sendy_message( string $raw ): string {
+		$known = array(
+			'No data passed',
+			'API key not passed',
+			'Invalid API key',
+			'From name not passed',
+			'From email not passed',
+			'Reply to email not passed',
+			'Subject not passed',
+			'HTML not passed',
+			'List or segment ID(s) not passed',
+			'One or more list IDs are invalid',
+			'One or more segment IDs are invalid',
+			'List or segment IDs does not belong to a single brand',
+			'List IDs does not belong to a single brand',
+			'Brand ID not passed',
+			'Unable to create campaign',
+			'Unable to create and send campaign',
+			'Unable to schedule campaign',
+			'Unable to calculate totals',
+			'Campaign created',
+		);
+
+		return in_array( $raw, $known, true ) ? $raw : 'unrecognized response';
+	}
+
 	// ─── DB mechanics ───────────────────────────────────────────
 
 	/**
