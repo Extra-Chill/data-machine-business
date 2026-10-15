@@ -342,6 +342,8 @@ Join Amazon Associates, create Amazon Creators API credentials, and configure th
 
 Campaign abilities resolve credentials from the DMB-owned `datamachine_sendy_config` network option or `datamachine_sendy_config` filter. Configure `api_key` and `sendy_url` for campaign create/update, plus a `db` array containing `host`, `user`, `pass`, `name`, and optional `port` for list/get/delete. List and get need read access; delete also needs permission to delete draft rows. Credentials are never accepted or returned by the campaign abilities; consumers supply only campaign content, sender identity, IDs, and filters. Consumer-specific list and brand IDs remain consumer policy.
 
+`datamachine_sendy_config` is the single source of truth for Sendy credentials. `sendy-subscribe` and `sendy-metrics` use it whenever the caller omits their legacy `config` override, so metrics also gain the `db` connection. Consumers that own a settings screen write the API connection with `SendyAbilities::update_api_config( $api_key, $sendy_url )`, which preserves the `db` array; `SendyAbilities::has_api_config()` reports whether the API connection is usable.
+
 The older subscribe and metrics abilities retain their config input for existing public subscription and analytics consumers. Their migration to integration-owned configuration is separate from the credential-free campaign surface.
 
 ### Mediavine
