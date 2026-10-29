@@ -18,7 +18,7 @@ final class ProviderModules {
 		);
 		$system_tasks     = array(
 			'DataMachine\\Engine\\AI\\System\\Tasks\\SystemTask' => static fn(): bool => class_exists( 'DataMachine\\Engine\\AI\\System\\Tasks\\SystemTask' ),
-			'DataMachine\\Engine\\Tasks\\TaskScheduler'           => static fn(): bool => class_exists( 'DataMachine\\Engine\\Tasks\\TaskScheduler' ),
+			'DataMachine\\Engine\\Tasks\\TaskScheduler' => static fn(): bool => class_exists( 'DataMachine\\Engine\\Tasks\\TaskScheduler' ),
 		);
 		$tools            = array(
 			'DataMachine\\Engine\\AI\\Tools\\BaseTool' => static fn(): bool => class_exists( 'DataMachine\\Engine\\AI\\Tools\\BaseTool' ),
