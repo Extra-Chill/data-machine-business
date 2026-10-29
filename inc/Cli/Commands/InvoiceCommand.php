@@ -66,6 +66,6 @@ class InvoiceCommand {
 				\WP_CLI::error( 'Unable to write invoice HTML. Check the send result before retrying delivery.' );
 			}
 		}
-		\WP_CLI::line( wp_json_encode( $result, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES ) );
+		\WP_CLI::line( (string) wp_json_encode( $result, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES ) );
 	}
 }

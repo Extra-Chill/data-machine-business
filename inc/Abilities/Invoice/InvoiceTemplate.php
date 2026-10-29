@@ -132,9 +132,9 @@ class InvoiceTemplate {
 <body style="margin:0;padding:24px 12px;background:<?php echo esc_attr( $c['surface'] ); ?>;color:<?php echo esc_attr( $c['text_primary'] ); ?>;font-family:Helvetica,Arial,sans-serif;">
 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;"><tr><td align="center">
 <table role="presentation" width="600" cellspacing="0" cellpadding="0" style="width:100%;max-width:600px;border-collapse:collapse;background:#ffffff;border-radius:10px;overflow:hidden;">
-<tr><td style="background:<?php echo esc_attr( $c['header_bg'] ); ?>;padding:20px 28px;border-bottom:4px solid <?php echo esc_attr( $c['accent'] ); ?>;">
+<tr><td style="background:<?php echo esc_attr( $c['header_bg'] ); ?>;padding:14px 28px;border-bottom:4px solid <?php echo esc_attr( $c['accent'] ); ?>;">
 		<?php if ( $logo ) : ?>
-<img src="<?php echo esc_url( $logo ); ?>" alt="<?php echo esc_attr( get_bloginfo( 'name' ) ); ?>" width="110" style="display:block;width:110px;max-width:110px;height:auto;border:0;">
+<img src="<?php echo esc_url( $logo ); ?>" alt="<?php echo esc_attr( get_bloginfo( 'name' ) ); ?>" width="64" style="display:block;width:64px;max-width:64px;height:auto;border:0;">
 		<?php else : ?>
 <strong style="font-size:24px;color:<?php echo esc_attr( $c['text_inverse'] ); ?>;"><?php echo esc_html( get_bloginfo( 'name' ) ); ?></strong>
 		<?php endif; ?>
@@ -189,6 +189,6 @@ class InvoiceTemplate {
 </td></tr></table>
 </body></html>
 		<?php
-		return ob_get_clean();
+		return (string) ob_get_clean();
 	}
 }
