@@ -170,6 +170,12 @@ final class ProviderModules {
 				}
 			),
 			new ProviderModule(
+				'invoice',
+				$abilities,
+				array( 'datamachine/create-invoice' ),
+				static fn() => new \DataMachineBusiness\Abilities\Invoice\CreateInvoiceAbility()
+			),
+			new ProviderModule(
 				'sendy',
 				$abilities,
 				array( 'datamachine/sendy-subscribe', 'datamachine/sendy-push-campaign', 'datamachine/sendy-list-campaigns', 'datamachine/sendy-get-campaign', 'datamachine/sendy-delete-campaign', 'datamachine/sendy-metrics' ),

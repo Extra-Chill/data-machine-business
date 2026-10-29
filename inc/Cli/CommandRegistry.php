@@ -33,6 +33,7 @@ final class CommandRegistry {
 	 */
 	public static function map(): array {
 		return array(
+			'datamachine invoice'              => Commands\InvoiceCommand::class,
 			'datamachine indexnow'              => IndexNowCommand::class,
 			'datamachine analytics ga'          => GoogleAnalyticsCommand::class,
 			'datamachine analytics gsc'         => GoogleSearchConsoleCommand::class,
